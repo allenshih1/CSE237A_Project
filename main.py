@@ -16,6 +16,7 @@ import datetime
 import pytz
 import dateutil.parser
 import threading
+import pygame
 
 try:
     import argparse
@@ -35,6 +36,7 @@ end = None
 count = 0
 inBed = False
 oldInBed = False
+song = ''
 
 def get_credentials():
     """Gets valid user credentials from storage.
@@ -89,7 +91,7 @@ def getFirstAlarm(service):
     for event in events:
         start = event['start'].get('dateTime', event['start'].get('date'))
         end = event['end'].get('dateTime', event['end'].get('date'))
-        return (dateutil.parser.parse(start), dateutil.parser.parse(end))
+        return (dateutil.parser.parse(start), dateutil.parser.parse(end), event.get('description', 'mpthreetest.mp3'))
 
 
 def insertEvent(service):
@@ -129,8 +131,9 @@ def getService():
 def pollCalendar(service):
     global start
     global end
+    global song
     while True:
-        start, end = getFirstAlarm(service)
+        start, end, song = getFirstAlarm(service)
         time.sleep(30)
 
 def lightControl():
@@ -157,7 +160,7 @@ def sendIR():
         else:
             print('open')
             inBed = False
-        lightControl()
+        #lightControl()
 
 def receiveIR():
     global count
@@ -189,6 +192,9 @@ def main():
     calendarThread = threading.Thread(target = pollCalendar, args = (service,))
     calendarThread.daemon = True
     calendarThread.start()
+    pygame.mixer.init()
+    pygame.mixer.music.load('mpthreetest.mp3')
+    pygame.mixer.music.play()
 
     while True:
         now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
@@ -196,6 +202,7 @@ def main():
             print(start, end)
             if start < now:
                 print('alarm!!!')
+                print(song)
             else:
                 print('nothing...')
         time.sleep(5)
