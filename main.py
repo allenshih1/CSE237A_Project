@@ -1,7 +1,10 @@
+#!/usr/bin/python
 
 from __future__ import print_function
 import httplib2
 import os
+import signal
+import subprocess
 import time
 
 from apiclient import discovery
@@ -25,9 +28,13 @@ except ImportError:
 SCOPES = 'https://www.googleapis.com/auth/calendar'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Google Calendar API Python Quickstart'
+PIPE_PATH = './pipe'
 
 start = None
 end = None
+count = 0
+inBed = False
+oldInBed = False
 
 def get_credentials():
     """Gets valid user credentials from storage.
@@ -126,6 +133,43 @@ def pollCalendar(service):
         start, end = getFirstAlarm(service)
         time.sleep(30)
 
+def lightControl():
+    global oldInBed
+    if oldInBed != inBed:
+        if inBed:
+            print("light off")
+            subprocess.call(["codesend", "283964"])
+        else:
+            print("light on")
+            subprocess.call(["codesend", "283955"])
+    oldInBed = inBed
+
+def sendIR():
+    global inBed
+    while True:
+        local_count = count
+        subprocess.call(["irsend", "SEND_ONCE", "tank", "KEY_0"])
+        print('sending IR signal')
+        time.sleep(0.5)
+        if count == local_count:
+            print('blocked')
+            inBed = True
+        else:
+            print('open')
+            inBed = False
+        lightControl()
+
+def receiveIR():
+    global count
+    while True:
+        with open(PIPE_PATH, 'r') as pipe:
+            while True:
+                s = pipe.read()
+                if len(s) == 0:
+                    print('pipe closed')
+                    break
+                count = count + 1
+
 def main():
     """Shows basic usage of the Google Calendar API.
 
@@ -133,6 +177,15 @@ def main():
     10 events on the user's calendar.
     """
     service = getService()
+
+    IRThread = threading.Thread(target = sendIR, args = ())
+    IRThread.daemon = True
+    IRThread.start()
+
+    IRReadThread = threading.Thread(target = receiveIR, args = ())
+    IRReadThread.daemon = True
+    IRReadThread.start()
+
     calendarThread = threading.Thread(target = pollCalendar, args = (service,))
     calendarThread.daemon = True
     calendarThread.start()
