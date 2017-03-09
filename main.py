@@ -30,12 +30,15 @@ SCOPES = 'https://www.googleapis.com/auth/calendar'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Google Calendar API Python Quickstart'
 PIPE_PATH = './pipe'
+MUSIC_DIR = '/home/pi/Music'
 
 start = None
 end = None
 count = 0
 inBed = False
-oldInBed = False
+alarm = False
+oldScreenLight = True
+blockedCount = 0
 song = ''
 
 def get_credentials():
@@ -136,31 +139,61 @@ def pollCalendar(service):
         start, end, song = getFirstAlarm(service)
         time.sleep(30)
 
+def screenon():
+    subprocess.call(["sudo", "/home/pi/CSE237A_Project/screenon.sh"])
+    
+def screenoff():
+    subprocess.call(["sudo", "/home/pi/CSE237A_Project/screenoff.sh"])
+
+def lighton():
+    subprocess.call(["codesend", "283955"])
+
+def lightoff():
+    subprocess.call(["codesend", "283964"])
+
 def lightControl():
-    global oldInBed
-    if oldInBed != inBed:
-        if inBed:
-            print("light off")
-            subprocess.call(["codesend", "283964"])
+    global oldScreenLight
+    while True:
+        if inBed and not alarm:
+            screenLight = False
         else:
-            print("light on")
-            subprocess.call(["codesend", "283955"])
-    oldInBed = inBed
+            screenLight = True
+
+        if screenLight != oldScreenLight:
+            if screenLight:
+                print("light on")
+                lighton()
+                screenon()
+            else:
+                print("light off")
+                lightoff()
+                screenoff()
+        oldScreenLight = screenLight
+        time.sleep(0.1)
+
+def initScreenLight():
+    lighton()
+    screenoff()
+    screenon()
 
 def sendIR():
     global inBed
+    global blockedCount
     while True:
         local_count = count
         subprocess.call(["irsend", "SEND_ONCE", "tank", "KEY_0"])
         print('sending IR signal')
         time.sleep(0.5)
         if count == local_count:
+            blockedCount += 1
+        else:
+            blockedCount = 0
+        if blockedCount > 10:
             print('blocked')
             inBed = True
         else:
             print('open')
             inBed = False
-        #lightControl()
 
 def receiveIR():
     global count
@@ -179,7 +212,9 @@ def main():
     Creates a Google Calendar API service object and outputs a list of the next
     10 events on the user's calendar.
     """
+    global alarm
     service = getService()
+    initScreenLight()
 
     IRThread = threading.Thread(target = sendIR, args = ())
     IRThread.daemon = True
@@ -192,20 +227,36 @@ def main():
     calendarThread = threading.Thread(target = pollCalendar, args = (service,))
     calendarThread.daemon = True
     calendarThread.start()
-    pygame.mixer.init()
-    pygame.mixer.music.load('mpthreetest.mp3')
-    pygame.mixer.music.play()
 
+    lightScreenThread = threading.Thread(target = lightControl, args = ())
+    lightScreenThread.daemon = True
+    lightScreenThread.start()
+
+    pygame.mixer.init()
+
+    eventStarted = {}
     while True:
         now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
         if start:
             print(start, end)
             if start < now:
+                alarm = True
+            else:
+                alarm = False
+
+            if start < now and inBed:
                 print('alarm!!!')
-                print(song)
+                if start not in eventStarted:
+                    eventStarted[start] = True
+                    print('Start playing', song)
+                    pygame.mixer.music.load(MUSIC_DIR + '/' + song)
+                    pygame.mixer.music.play(-1)
+                else:
+                    pygame.mixer.music.unpause()
             else:
                 print('nothing...')
-        time.sleep(5)
+                pygame.mixer.music.pause()
+        time.sleep(1)
 
 if __name__ == '__main__':
     main()

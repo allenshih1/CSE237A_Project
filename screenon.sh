@@ -1,3 +1,5 @@
 #!/bin/sh
 
-tvservice -p && chvt 1 && chvt 7
+tvservice -p
+chvt 9
+chvt 7
